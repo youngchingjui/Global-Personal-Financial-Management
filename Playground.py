@@ -9,7 +9,7 @@ import os
 import chardet
 import cchardet
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 import pymysql
 import mysql.connector
@@ -23,7 +23,7 @@ def connect_aws_db():
   port = 3306
   dbname = 'pfmdatabase'
   user = 'pfmrdbsuser'
-  password = os.environ['pfmdbpw']
+  password = os.environ['PFMDBPW']
 
   conn = pymysql.connect(host, user=user, port=port, passwd=password, db=dbname)
   return conn
@@ -146,11 +146,39 @@ def save_to_metadata_table(header_data):
   # Adds row of header data to database
   # Checks if this file has already been added before. If so, it does not add the row.
   # If this is not duplicate, then is_new = True. If it is duplicate, method returns false.
-  conn = connect_aws_db()
+
+  # Returns: is_new, indicating whether this file was previously already uploaded
   
+  print("Saving metadata to MySQL db")
+  conn = connect_aws_db()
+  cur = conn.cursor()
+  datetime_format = '%Y-%m-%d %H:%M:%S'
+  datetime_format_ms = '%Y-%m-%d %H:%M:%S.%f'
+  utc = timezone.utc
 
+  # Pull out all of the variables from header_data
+  account_name = header_data.get('account_name')
+  date_range_from = header_data.get('date_range').get('from')
+  date_range_to = header_data.get('date_range').get('to')
+  download_time = header_data.get('download_time')
+
+  # Check if this file has been saved before. If so, set is_new = False
   is_new = True
+  query = "SELECT * FROM pfmdatabase.alipay_header WHERE account_name=%s AND date_range_from=%s AND date_range_to=%s AND download_time=%s"
 
+  # Make sure to save all the dates in UTC format
+  cur.execute(query, (account_name, date_range_from.astimezone(tz=utc).strftime(datetime_format), date_range_to.astimezone(tz=utc).strftime(datetime_format), download_time.astimezone(tz=utc).strftime(datetime_format)))
+  rows = cur.fetchall()
+  if len(rows) > 0:
+    is_new = False
+
+  # Save metadata to table, even if it might be duplicate
+  # Record timestamp of when we're uploading this
+  insertStatement = "INSERT INTO pfmdatabase.alipay_header (account_name, date_range_from, date_range_to, download_time, datetime_uploaded) VALUES(%s, %s, %s, %s, %s)"
+  cur.execute(insertStatement, (account_name, date_range_from.astimezone(tz=utc).strftime(datetime_format), date_range_to.astimezone(tz=utc).strftime(datetime_format), download_time.astimezone(tz=utc).strftime(datetime_format), datetime.now().astimezone(tz=utc).strftime(datetime_format_ms)))
+  conn.commit
+
+  conn.close()
   return is_new
 
 # Get the data from the file
@@ -161,13 +189,15 @@ save_to_bucket(data)
 
 # Get header data from file
 header_data = get_header_data(data)
-
+print(header_data)
 # Save the header_data to metadata table
 is_new = save_to_metadata_table(header_data)
 
 # Extract and structure the data
 data = formatData(data)
 
+# Save the data locally for now. 
+# TODO: Take this out when no longer needed
 data.to_csv('sample_output.csv')
 
 # Save the data into a database (TBD)
