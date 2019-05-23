@@ -1,8 +1,10 @@
-# Python Playground    
+# alipay.py
 
-# From terminal, try this command if all else doesn't work:
-#iconv -f [ENCODER FROM] -t UTF-8 [FILENAME]
-#file --mime [FILENAME]
+"""
+From terminal, try this command if all else doesn't work to decode Alipay file:
+iconv -f [ENCODER FROM] -t UTF-8 [FILENAME]
+file --mime [FILENAME]
+"""
 
 import codecs
 import os
@@ -15,7 +17,7 @@ import pymysql
 import mysql.connector
 import os
 
-filename = "Raw/Alipay/20180419_20190419_ACCLOG.csv"
+utc = timezone.utc
 
 # Method to connect to AWS MySQL database
 def connect_aws_db():
@@ -170,36 +172,85 @@ def extract_transactions(data):
 
 def restructure_transactions(data):
   """
-  Restructures transaction data in a better way to conduct analysis. Following is done:
+  Cleans and reformats transaction table. Specifically:
   - Converts 时间 column to datetime format
+  - Extracts vendor name and/or details from 名称 column
   - Creates new column that determines if a transaction is one of the following categories:
     - 转账 (transfer)
     - 支付 (payment)
     - 收款 (deposit)
     - 在线支付 (online payment)
-  - Extracts vendor name and/or details from 名称 column
   - Combines 收入 and 支出 columns into a single column. Since Alipay is an asset account (not a liability), debits will be positive and credits will be negative
 
+  Args:
+    data (DataFrame): A Pandas dataframe of Alipay transactions. Column headers should include: ['流水号','时间','名称','备注','收入','支出','账户余额（元）','资金渠道']
+
+  Returns:
+    data (DataFrame): A Pandas dataframe that is cleaned and re-formated. Column headers include: ['流水号','时间','名称','备注','收入','支出','账户余额（元）','资金渠道']
+
   """
+
+  # Convert 时间 column to datetime
+  data.时间.to_datetime
+
+  for index, row in data.iterrows():
+    # Clean up the 名称 column
+    if row.名称 == '支付':
+      take string after the first '-' and save it as vendor
+      if vendor starts with '滴滴快车', pull out didi driver name and save under description
+      if vendor starts with '上海地铁', pull out rest of string and save under description
+      if end of string has '外卖订单', pull out '外卖订单' and save it under description
+    
+    # Create txn_type column and fill it
+    data.add column ('txn_type')
+    for each row
+      if 名称 starts with 支付-, then data.txn_type = 支付
+      elif 名称 starts with 转账, then data.txn_type = 转账
+      elif 名称 starts with 收款, then data.txn_type = 收款
+
+    # Combine 收入 and 支付 columns into single column, with negative numbers for credits
+    data.add_column('amount')
+    for each row:
+      if 收入:
+        data.amount = data.收入
+      elif 支付:
+        data.amount = data.支付
+
+    # Add category column
+    data.add_column('category')
 
   return data
 
 
-def saveData(data):
+def save_to_transactions_table(data):
   """
   Saves Alipay transaction data into a specified database
+  Checks if there are duplicates. If so, it does not save duplicated data
+  Prints out all duplicate rows
   
   Args:
     data (DataFrame): 
 
   Returns
     None
-
-  TODO: 
-    Build out this method
   """
 
-  pass
+  print("Saving transaction data to MySQL db")
+  conn = connect_aws_db()
+  cur = conn.cursor()
+
+  # TODO: Check if there's a way to do this in one go, instead of row by row
+  for row in data:
+    if row exists in database:
+      print('Duplicate row found. Did not upload to database: {}'.format(row))
+      go to next round in for loop
+
+    columns = data.columns
+    insertStatement = "INSERT INTO pfmdatabase.alipay_header ("+columns+") VALUES(%s, %s, %s, %s, %s)"
+    cur.execute(insertStatement, (data.columns))
+    conn.commit()
+
+  conn.close()
 
 def save_to_metadata_table(header_data):
   """
@@ -228,7 +279,6 @@ def save_to_metadata_table(header_data):
   print("Saving metadata to MySQL db")
   conn = connect_aws_db()
   cur = conn.cursor()
-  utc = timezone.utc
 
   # Pull out all of the variables from header_data
   account_name = header_data.get('account_name')
@@ -293,37 +343,18 @@ def save_balance_data(balances):
   # Connect to the database
   conn = connect_aws_db()
   cur = conn.cursor()
-  utc = timezone.utc
 
-# Get the data from the file
-data = extract_file(filename)
+  for row in balances:
 
-# Save the converted file (now in UTF-8 format) to bucket
-save_to_bucket(data)
+    # Check if duplicate exists. If so, don't add
+    if duplicate:
+      skip to next row
+  
+    insertStatement = ""
+    cur.execute(insertStatement, ())
+    conn.commit()
 
-# Get header data from file
-header_data = get_header_data(data)
-print("Our header data: {}".format(header_data))
+  conn.close()
 
-# Save the header_data to metadata table
-is_new = save_to_metadata_table(header_data)
 
-# Extract transactions
-data = extract_transactions(data)
-
-# Restructures the data so that it's more uniform and we can conduct analysis on the data
-data = restructure_transactions(data)
-
-# Extract point-in-time balances from each transaction
-balances = extract_balances(data)
-
-# Save balances in database
-save_balance_data(balances)
-
-# Save the data locally for now. 
-# TODO: Take this out when no longer needed
-data.to_csv('sample_output.csv')
-
-# Save the data into a database (TBD)
-saveData(data)
 
