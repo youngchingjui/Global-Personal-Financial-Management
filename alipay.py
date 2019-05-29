@@ -16,33 +16,35 @@ import pytz
 import pymysql
 import mysql.connector
 import os
+from database import Database
 
 utc = timezone.utc
+db = Database()
 
-# Method to connect to AWS MySQL database
-def connect_aws_db():
-  """
-  Connects to our database on AWS
+# # Method to connect to AWS MySQL database
+# def connect_aws_db():
+#   """
+#   Connects to our database on AWS
 
-  Args:
-    None
+#   Args:
+#     None
 
-  Returns:
-    conn (Connection): Our connection object to execute SQL statements
+#   Returns:
+#     conn (Connection): Our connection object to execute SQL statements
 
-  TODO: 
-    Refactor so host, port, dbname, user, and password can be interchanged.
-    Consider, if re-factored, do we need this method?
-  """
+#   TODO: 
+#     Refactor so host, port, dbname, user, and password can be interchanged.
+#     Consider, if re-factored, do we need this method?
+#   """
   
-  host = "pfm-rdbs-instance.cd5ryppsxnnf.ap-northeast-2.rds.amazonaws.com"
-  port = 3306
-  dbname = 'pfmdatabase'
-  user = 'pfmrdbsuser'
-  password = os.environ['PFMDBPW']
+#   host = "pfm-rdbs-instance.cd5ryppsxnnf.ap-northeast-2.rds.amazonaws.com"
+#   port = 3306
+#   dbname = 'pfmdatabase'
+#   user = 'pfmrdbsuser'
+#   password = os.environ['PFMDBPW']
 
-  conn = pymysql.connect(host, user=user, port=port, passwd=password, db=dbname)
-  return conn
+#   conn = pymysql.connect(host, user=user, port=port, passwd=password, db=dbname)
+#   return conn
 
 # Try to extract the Alipay file with the right codec
 def extract_file(filename):
@@ -236,10 +238,11 @@ def save_to_transactions_table(data):
   """
 
   print("Saving transaction data to MySQL db")
-  conn = connect_aws_db()
-  cur = conn.cursor()
+  # conn = database.connect_aws_db()
+  # cur = conn.cursor()
 
   # TODO: Check if there's a way to do this in one go, instead of row by row
+  # UPDATE: If overwriting unique, returns error. Create new column that makes unique of combined columns.
   for row in data:
     if row exists in database:
       print('Duplicate row found. Did not upload to database: {}'.format(row))
@@ -247,10 +250,10 @@ def save_to_transactions_table(data):
 
     columns = data.columns
     insertStatement = "INSERT INTO pfmdatabase.alipay_header ("+columns+") VALUES(%s, %s, %s, %s, %s)"
-    cur.execute(insertStatement, (data.columns))
-    conn.commit()
+    db.cur.execute(insertStatement, (data.columns))
+    db.conn.commit()
 
-  conn.close()
+  db.conn.close()
 
 def save_to_metadata_table(header_data):
   """
@@ -277,8 +280,8 @@ def save_to_metadata_table(header_data):
   """
   
   print("Saving metadata to MySQL db")
-  conn = connect_aws_db()
-  cur = conn.cursor()
+  # conn = database.connect_aws_db()
+  # cur = conn.cursor()
 
   # Pull out all of the variables from header_data
   account_name = header_data.get('account_name')
@@ -291,8 +294,8 @@ def save_to_metadata_table(header_data):
   query = "SELECT * FROM pfmdatabase.alipay_header WHERE account_name=%s AND date_range_from=%s AND date_range_to=%s AND download_time=%s"
 
   # Make sure to save all the dates in UTC format
-  cur.execute(query, (account_name, date_range_from.astimezone(tz=utc), date_range_to.astimezone(tz=utc), download_time.astimezone(tz=utc)))
-  rows = cur.fetchall()
+  db.cur.execute(query, (account_name, date_range_from.astimezone(tz=utc), date_range_to.astimezone(tz=utc), download_time.astimezone(tz=utc)))
+  rows = db.cur.fetchall()
   if len(rows) > 0:
     print("Found duplicate entry")
     is_new = False
@@ -302,11 +305,11 @@ def save_to_metadata_table(header_data):
     # Save metadata to table, even if it might be duplicate
     # Record timestamp of when we're uploading this
     insertStatement = "INSERT INTO pfmdatabase.alipay_header (account_name, date_range_from, date_range_to, download_time, datetime_uploaded) VALUES(%s, %s, %s, %s, %s)"
-    cur.execute(insertStatement, (account_name, date_range_from.astimezone(tz=utc), date_range_to.astimezone(tz=utc), download_time.astimezone(tz=utc), datetime.now().astimezone(tz=utc)))
+    db.cur.execute(insertStatement, (account_name, date_range_from.astimezone(tz=utc), date_range_to.astimezone(tz=utc), download_time.astimezone(tz=utc), datetime.now().astimezone(tz=utc)))
     
-    conn.commit()
+    db.conn.commit()
 
-  conn.close()
+  db.conn.close()
   return is_new
 
 def extract_balances(data):
@@ -341,8 +344,8 @@ def save_balance_data(balances):
   """
 
   # Connect to the database
-  conn = connect_aws_db()
-  cur = conn.cursor()
+  # conn = database.connect_aws_db()
+  # cur = conn.cursor()
 
   for row in balances:
 
@@ -351,10 +354,10 @@ def save_balance_data(balances):
       skip to next row
   
     insertStatement = ""
-    cur.execute(insertStatement, ())
-    conn.commit()
+    db.cur.execute(insertStatement, ())
+    db.conn.commit()
 
-  conn.close()
+  db.conn.close()
 
 
 

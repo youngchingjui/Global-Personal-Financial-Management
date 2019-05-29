@@ -1,37 +1,46 @@
 # main.py
 
-import alipay
+from flask import Flask, request, jsonify, render_template, session
+from database import Database
+import authentication
+import bcrypt
 
-filename = "Raw/Alipay/20180419_20190419_ACCLOG.csv"
+app = Flask(__name__)
 
-# Get the data from the file
-data = alipay.extract_file(filename)
+@app.route('/', methods=['GET'])
+def main():
+    return render_template('index.html')
 
-# Save the converted file (now in UTF-8 format) to bucket
-alipay.save_to_bucket(data)
+# TODO: This is causing issues with other routes
+@app.route('/<string:page_name>/')
+def render_static(page_name):
+    return render_template('%s' % page_name)
 
-# Get header data from file
-header_data = alipay.get_header_data(data)
-print("Our header data: {}".format(header_data))
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.methods == 'GET':
+        return render_template('register.html')
+    elif request.methods == 'POST':
+        json_data = request.json
+        email = json_data['email'],
+        password = json_data['password']
 
-# Save the header_data to metadata table
-is_new = alipay.save_to_metadata_table(header_data)
+        # Insert user into database
+        status = authentication.create_new_user(email, password)
 
-# Extract transactions
-data = alipay.extract_transactions(data)
+        return jsonify({'result': status})
 
-# Restructures the data so that it's more uniform and we can conduct analysis on the data
-data = alipay.restructure_transactions(data)
+@app.route('/login', methods=['POST'])
+def login():
+    json_data = request.json
+    email = json_data['email'],
+    password = json_data['password']
 
-# Extract point-in-time balances from each transaction
-balances = alipay.extract_balances(data)
+    status = authentication.login(email, password)
+    if status:
+        session['logged_in'] = True
 
-# Save balances in database
-alipay.save_balance_data(balances)
+    return jsonify({'result': status})
 
-# Save the data locally for now. 
-# TODO: Take this out when no longer needed
-data.to_csv('sample_output.csv')
-
-# Save the data into a database (TBD)
-alipay.save_to_transactions_table(data)
+if __name__ == '__main__':
+    app.run(debug=False)
