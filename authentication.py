@@ -31,9 +31,7 @@ def create_new_user(email, password):
     except:
         status = 'this user is already registered'
     print(status)
-
     db.conn.close()
-    
     return status
 
 def get_user(email):
@@ -56,16 +54,7 @@ def get_user(email):
     queryStatement = "SELECT * FROM pfmdatabase.users WHERE email = %s"
     db.cur.execute(queryStatement, (email))
     result = db.cur.fetchone()
-
-    # TODO: This is a terrible way to extract values, but db.cur.fetchone() is returning tuples for now. Figure out how to return dictionaries.
-    user = {
-        'id': result[0],
-        'email': result[1],
-        'password': result[2],
-        'registered_on': result[3],
-        'admin': result[4]
-    }
-
+    user = result
     db.conn.close()
 
     return user
@@ -73,9 +62,12 @@ def get_user(email):
 def login(email, password):
     user = get_user(email)
     hashed_password = user.get('password')
-    status = False
 
-    if user and hashed_password and bcrypt.checkpw(password, hashed_password):
-        status = True
+    # bcrypt requires strings to be encoded before checking
+    password = password.encode('utf-8')
+    hashed_password = hashed_password.encode('utf-8')
+
+    status = False
+    status = bcrypt.checkpw(password, hashed_password)
     
     return status
